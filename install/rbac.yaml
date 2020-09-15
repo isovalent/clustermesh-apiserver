@@ -36,6 +36,8 @@ rules:
   - ciliumendpoints
   - ciliumendpoints/status
   verbs:
+  - create
+  - update
   - get
   - list
   - watch
