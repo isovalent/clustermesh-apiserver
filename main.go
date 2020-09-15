@@ -26,6 +26,7 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/cilium/cilium/pkg/identity"
 	identityCache "github.com/cilium/cilium/pkg/identity/cache"
@@ -528,7 +529,6 @@ func runServer(cmd *cobra.Command) {
 			return &serviceStore.ClusterService{}
 		},
 	})
-
 	if err != nil {
 		log.WithError(err).Fatal("Unable to setup service store in etcd")
 	}
@@ -556,6 +556,18 @@ func runServer(cmd *cobra.Command) {
 		synchronizeEndpoints()
 		synchronizeServices()
 	}
+
+	go func() {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), defaults.LockLeaseTTL)
+			err := kvstore.Client().Update(ctx, kvstore.HeartbeatPath, []byte(time.Now().Format(time.RFC3339)), true)
+			if err != nil {
+				log.WithError(err).Warning("Unable to update heartbeat key")
+			}
+			cancel()
+			<-time.After(kvstore.HeartbeatWriteInterval)
+		}
+	}()
 
 	log.Info("Initialization complete")
 
