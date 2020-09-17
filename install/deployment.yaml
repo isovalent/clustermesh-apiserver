@@ -53,6 +53,7 @@ spec:
         command:
           - "/usr/bin/clustermesh-apiserver"
         args:
+          - --debug
           - --cluster-name=$(CLUSTER_NAME)
         env:
         - name: CLUSTER_NAME
