@@ -37,6 +37,7 @@ rules:
   - ciliumendpoints/status
   verbs:
   - create
+  - patch
   - update
   - get
   - list
