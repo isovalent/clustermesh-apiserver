@@ -13,6 +13,7 @@ require (
 	github.com/google/gops v0.3.6
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v1.0.0
+	github.com/spf13/viper v1.6.1
 	golang.org/x/sys v0.0.0-20200420163511-1957bb5e6d1f
 	k8s.io/api v0.18.8
 	k8s.io/apimachinery v0.18.8
