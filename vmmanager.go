@@ -32,11 +32,11 @@ import (
 	"github.com/cilium/cilium/pkg/labels"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
 	"github.com/cilium/cilium/pkg/option"
-        "github.com/cilium/cilium/pkg/source"
+	"github.com/cilium/cilium/pkg/source"
 
-        "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-        metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type VMManager struct {
@@ -96,9 +96,9 @@ func (m *VMManager) RegisterVMEndpoint(node *nodeTypes.Node) {
 	account := "default"
 
 	labelMap := map[string]string{
-		"name": node.Name,
-		"io.cilium.k8s.policy.cluster": clusterName,
-		"io.kubernetes.pod.namespace": namespace,
+		"name":                                node.Name,
+		"io.cilium.k8s.policy.cluster":        clusterName,
+		"io.kubernetes.pod.namespace":         namespace,
 		"io.cilium.k8s.policy.serviceaccount": account,
 	}
 	for k, v := range node.Labels {
@@ -145,7 +145,7 @@ func (m *VMManager) RegisterVMEndpoint(node *nodeTypes.Node) {
 }
 
 const (
-        maxRetryCount = 5
+	maxRetryCount = 5
 )
 
 // UpdateCiliumNodeResource updates the CiliumNode resource representing the
@@ -153,43 +153,43 @@ const (
 func (m *VMManager) UpdateCiliumNodeResource(node *nodeTypes.Node) {
 	nr := node.ToCiliumNode()
 
-        for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
+	for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
 		log.Info("Getting CN during an update")
-                nodeResource, err := m.ciliumClient.CiliumV2().CiliumNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-                if err != nil {
-                        if _, err = m.ciliumClient.CiliumV2().CiliumNodes().Create(context.TODO(), nr, metav1.CreateOptions{}); err != nil {
-                                if errors.IsConflict(err) {
-                                        log.WithError(err).Warn("Unable to create CiliumNode resource, will retry")
-                                        continue
-                                }
-                                log.WithError(err).Fatal("Unable to create CiliumNode resource")
-                        } else {
-                                log.Info("Successfully created CiliumNode resource: %v", *nr)
-                                return
-                        }
+		nodeResource, err := m.ciliumClient.CiliumV2().CiliumNodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+		if err != nil {
+			if _, err = m.ciliumClient.CiliumV2().CiliumNodes().Create(context.TODO(), nr, metav1.CreateOptions{}); err != nil {
+				if errors.IsConflict(err) {
+					log.WithError(err).Warn("Unable to create CiliumNode resource, will retry")
+					continue
+				}
+				log.WithError(err).Fatal("Unable to create CiliumNode resource")
+			} else {
+				log.Info("Successfully created CiliumNode resource: %v", *nr)
+				return
+			}
 
-                } else {
+		} else {
 			nodeResource.ObjectMeta.Labels = nr.ObjectMeta.Labels
 			nodeResource.Spec = nr.Spec
-                        if _, err := m.ciliumClient.CiliumV2().CiliumNodes().Update(context.TODO(), nodeResource, metav1.UpdateOptions{}); err != nil {
-                                if errors.IsConflict(err) {
-                                        log.WithError(err).Warn("Unable to update CiliumNode resource, will retry")
-                                        continue
-                                }
-                                log.WithError(err).Fatal("Unable to update CiliumNode resource")
-                        } else {
-                                log.Info("Successfully updated CiliumNode resource: %v", *nodeResource)
-                                return
-                        }
-                }
-        }
-        log.Fatal("Could not create or update CiliumNode resource, despite retries")
+			if _, err := m.ciliumClient.CiliumV2().CiliumNodes().Update(context.TODO(), nodeResource, metav1.UpdateOptions{}); err != nil {
+				if errors.IsConflict(err) {
+					log.WithError(err).Warn("Unable to update CiliumNode resource, will retry")
+					continue
+				}
+				log.WithError(err).Fatal("Unable to update CiliumNode resource")
+			} else {
+				log.Info("Successfully updated CiliumNode resource: %v", *nodeResource)
+				return
+			}
+		}
+	}
+	log.Fatal("Could not create or update CiliumNode resource, despite retries")
 }
 
 // UpdateCiliumEndpointResource updates the CiliumNode resource representing the
 // local node
 func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *identity.Identity, addresses []*ciliumv2.AddressPair, nodeIP net.IP) {
-        for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
+	for retryCount := 0; retryCount < maxRetryCount; retryCount++ {
 		log.Info("Getting Node during an CEP update")
 		nr, err := m.ciliumClient.CiliumV2().CiliumNodes().Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
@@ -197,11 +197,11 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 			continue
 		}
 		log.Info("Getting CEP during an initialization")
-                localCEP, err := m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Get(context.TODO(), name, metav1.GetOptions{})
-                if err != nil {
-                        cep := &ciliumv2.CiliumEndpoint{
-                                ObjectMeta: metav1.ObjectMeta{
-                                        Name: name,
+		localCEP, err := m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Get(context.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			cep := &ciliumv2.CiliumEndpoint{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
 					Namespace: namespace,
 					OwnerReferences: []metav1.OwnerReference{
 						{
@@ -215,15 +215,15 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 					Labels: map[string]string{
 						"name": name,
 					},
-                                },
-                        }
-                        if localCEP, err = m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Create(context.TODO(), cep, metav1.CreateOptions{}); err != nil {
-                                if errors.IsConflict(err) {
-                                        log.WithError(err).Warn("Unable to create CiliumEndpoint resource, will retry")
-                                        continue
-                                }
-                                log.WithError(err).Fatal("Unable to create CiliumEndpoint resource")
-                        }
+				},
+			}
+			if localCEP, err = m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Create(context.TODO(), cep, metav1.CreateOptions{}); err != nil {
+				if errors.IsConflict(err) {
+					log.WithError(err).Warn("Unable to create CiliumEndpoint resource, will retry")
+					continue
+				}
+				log.WithError(err).Fatal("Unable to create CiliumEndpoint resource")
+			}
 			js, _ := json.Marshal(cep)
 			log.Infof("Successfully created CiliumEndpoint resource %s/%s: %s", namespace, name, js)
 			js, _ = json.Marshal(localCEP)
@@ -233,7 +233,7 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 		mdl := ciliumv2.EndpointStatus{
 			ID: int64(1),
 			// ExternalIdentifiers: e.getModelEndpointIdentitiersRLocked(),
-			Identity:   getEndpointIdentity(identitymodel.CreateModel(id)),
+			Identity: getEndpointIdentity(identitymodel.CreateModel(id)),
 			Networking: &ciliumv2.EndpointNetworking{
 				Addressing: addresses,
 				NodeIP:     nodeIP.String(),
@@ -257,7 +257,7 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 				log.WithError(err).Fatal("json.Marshal(%v) failed", replaceCEPStatus)
 			}
 			localCEP, err = m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Patch(context.TODO(), name,
-				types.JSONPatchType, createStatusPatch,	metav1.PatchOptions{},"status")
+				types.JSONPatchType, createStatusPatch, metav1.PatchOptions{}, "status")
 			if err != nil {
 				if errors.IsConflict(err) {
 					log.WithError(err).Warn("Unable to update CiliumEndpoint resource, will retry")
@@ -270,7 +270,7 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 			}
 		} else {
 			localCEP.Status = mdl
-                        localCEP, err = m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Update(context.TODO(), localCEP, metav1.UpdateOptions{})
+			localCEP, err = m.ciliumClient.CiliumV2().CiliumEndpoints(namespace).Update(context.TODO(), localCEP, metav1.UpdateOptions{})
 			if err != nil {
 				if errors.IsConflict(err) {
 					log.WithError(err).Warn("Unable to update CiliumEndpoint resource, will retry")
@@ -282,8 +282,8 @@ func (m *VMManager) UpdateCiliumEndpointResource(name, namespace string, id *ide
 				return
 			}
 		}
-        }
-        log.Fatal("Could not create or update CiliumEndpoint resource, despite retries")
+	}
+	log.Fatal("Could not create or update CiliumEndpoint resource, despite retries")
 }
 
 func getEndpointIdentity(mdlIdentity *models.Identity) (identity *ciliumv2.EndpointIdentity) {
