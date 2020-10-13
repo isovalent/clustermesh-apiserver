@@ -1,0 +1,25 @@
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: test-ccnp
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      name: clustermesh-apiserver
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        io.kubernetes.pod.name: runtime
+    toPorts:
+    - ports:
+      - port: "80"
+        protocol: TCP
+      rules:
+        http:
+        - method: "GET"
+          path: "/status.*"
+  - toPorts:
+    - ports:
+      - port: "2379"
+        protocol: TCP
