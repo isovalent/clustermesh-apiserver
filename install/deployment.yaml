@@ -7,8 +7,8 @@ metadata:
 spec:
   ports:
   - port: 2379
-    name: api
-  type: CluserIP
+    nodePort: 32379
+  type: NodePort
   selector:
     name: "clustermesh-apiserver"
 ---
@@ -49,11 +49,10 @@ spec:
           - --initial-cluster-state=new
           - --auto-compaction-retention=1
       - name: "apiserver"
-        image: "cilium/clustermesh-apiserver:latest"
+        image: "cilium/clustermesh-apiserver:testing"
         command:
           - "/usr/bin/clustermesh-apiserver"
         args:
-          - --mock-file=/mock.json
           - --cluster-name=$(CLUSTER_NAME)
           - --cluster-id=$(CLUSTER_ID)
         env:
