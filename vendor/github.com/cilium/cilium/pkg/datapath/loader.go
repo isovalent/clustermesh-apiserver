@@ -32,7 +32,7 @@ type Loader interface {
 	EndpointHash(cfg EndpointConfiguration) (string, error)
 	DeleteDatapath(ctx context.Context, ifName, direction string) error
 	Unload(ep Endpoint)
-	Reinitialize(ctx context.Context, o BaseProgramOwner, deviceMTU int, iptMgr IptablesManager, p Proxy, r RouteReserver) error
+	Reinitialize(ctx context.Context, o BaseProgramOwner, deviceMTU int, iptMgr IptablesManager, p Proxy) error
 }
 
 // BaseProgramOwner is any type for which a loader is building base programs.
@@ -50,11 +50,6 @@ type PreFilter interface {
 	Dump(to []string) ([]string, int64)
 	Insert(revision int64, cidrs []net.IPNet) error
 	Delete(revision int64, cidrs []net.IPNet) error
-}
-
-// RouteReserver is any type which is responsible for installing local routes.
-type RouteReserver interface {
-	ReserveLocalRoutes()
 }
 
 // Proxy is any type which installs rules related to redirecting traffic to
@@ -77,8 +72,12 @@ type IptablesManager interface {
 	// use of original source addresses in proxy upstream
 	// connections.
 	SupportsOriginalSourceAddr() bool
-	RemoveRules()
+	RemoveRules(quiet bool)
 	InstallRules(ifName string) error
 	TransientRulesStart(ifName string) error
 	TransientRulesEnd(quiet bool)
+
+	// GetProxyPort fetches the existing proxy port configured for the
+	// specified listener. Used early in bootstrap to reopen proxy ports.
+	GetProxyPort(listener string) uint16
 }

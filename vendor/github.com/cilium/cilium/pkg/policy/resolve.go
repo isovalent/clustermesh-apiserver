@@ -1,4 +1,4 @@
-// Copyright 2018-2019 Authors of Cilium
+// Copyright 2018-2020 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 package policy
 
 import (
+	"github.com/cilium/cilium/pkg/identity"
 	"github.com/cilium/cilium/pkg/policy/trafficdirection"
 )
 
@@ -75,7 +76,10 @@ type EndpointPolicy struct {
 
 // PolicyOwner is anything which consumes a EndpointPolicy.
 type PolicyOwner interface {
-	LookupRedirectPort(l4 *L4Filter) uint16
+	GetID() uint64
+	LookupRedirectPortLocked(ingress bool, protocol string, port uint16) uint16
+	GetNamedPort(ingress bool, name string, proto uint8) uint16
+	GetNamedPortLocked(ingress bool, name string, proto uint8) uint16
 }
 
 // newSelectorPolicy returns an empty selectorPolicy stub.
@@ -108,7 +112,8 @@ func (p *selectorPolicy) Detach() {
 // SelectorCache. These can subsequently be plumbed into the datapath.
 //
 // Must be performed while holding the Repository lock.
-func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner) *EndpointPolicy {
+// PolicyOwner (aka Endpoint) is also locked during this call.
+func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner, isHost bool) *EndpointPolicy {
 	calculatedPolicy := &EndpointPolicy{
 		selectorPolicy: p,
 		PolicyMapState: make(MapState),
@@ -122,7 +127,7 @@ func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner) *EndpointPolicy 
 
 	// Register the new EndpointPolicy as a receiver of delta
 	// updates.  Any updates happening after this, but before
-	// computeDesiredL4PolicyMapEntires() call finishes may
+	// computeDesiredL4PolicyMapEntries() call finishes may
 	// already be applied to the PolicyMapState, specifically:
 	//
 	// - policyMapChanges may contain an addition of an entry that
@@ -133,10 +138,12 @@ func (p *selectorPolicy) DistillPolicy(policyOwner PolicyOwner) *EndpointPolicy 
 	p.insertUser(calculatedPolicy)
 
 	// Must come after the 'insertUser()' above to guarantee
-	// PolicyMapCanges will contain all changes that are applied
+	// PolicyMapChanges will contain all changes that are applied
 	// after the computation of PolicyMapState has started.
 	calculatedPolicy.computeDesiredL4PolicyMapEntries()
-	calculatedPolicy.PolicyMapState.DetermineAllowLocalhostIngress(p.L4Policy)
+	if !isHost {
+		calculatedPolicy.PolicyMapState.DetermineAllowLocalhostIngress()
+	}
 
 	return calculatedPolicy
 }
@@ -148,17 +155,26 @@ func (p *EndpointPolicy) computeDesiredL4PolicyMapEntries() {
 	if p.L4Policy == nil {
 		return
 	}
-	p.computeDirectionL4PolicyMapEntries(p.L4Policy.Ingress, trafficdirection.Ingress)
-	p.computeDirectionL4PolicyMapEntries(p.L4Policy.Egress, trafficdirection.Egress)
+	p.computeDirectionL4PolicyMapEntries(p.PolicyMapState, p.L4Policy.Ingress, trafficdirection.Ingress)
+	p.computeDirectionL4PolicyMapEntries(p.PolicyMapState, p.L4Policy.Egress, trafficdirection.Egress)
 }
 
-func (p *EndpointPolicy) computeDirectionL4PolicyMapEntries(l4PolicyMap L4PolicyMap, direction trafficdirection.TrafficDirection) {
+func (p *EndpointPolicy) computeDirectionL4PolicyMapEntries(policyMapState MapState, l4PolicyMap L4PolicyMap, direction trafficdirection.TrafficDirection) {
 	for _, filter := range l4PolicyMap {
-		keysFromFilter := filter.ToMapState(direction)
+		lookupDone := false
+		proxyport := uint16(0)
+		keysFromFilter := filter.ToMapState(p.PolicyOwner, direction)
 		for keyFromFilter, entry := range keysFromFilter {
 			// Fix up the proxy port for entries that need proxy redirection
 			if entry.IsRedirectEntry() {
-				entry.ProxyPort = p.PolicyOwner.LookupRedirectPort(filter)
+				if !lookupDone {
+					// only lookup once for each filter
+					// Use 'destPort' from the key as it is already resolved
+					// from a named port if needed.
+					proxyport = p.PolicyOwner.LookupRedirectPortLocked(filter.Ingress, string(filter.Protocol), keyFromFilter.DestPort)
+					lookupDone = true
+				}
+				entry.ProxyPort = proxyport
 				// If the currently allocated proxy port is 0, this is a new
 				// redirect, for which no port has been allocated yet. Ignore
 				// it for now. This will be configured by
@@ -167,7 +183,7 @@ func (p *EndpointPolicy) computeDirectionL4PolicyMapEntries(l4PolicyMap L4Policy
 					continue
 				}
 			}
-			p.PolicyMapState[keyFromFilter] = entry
+			policyMapState.DenyPreferredInsert(keyFromFilter, entry)
 		}
 	}
 }
@@ -179,6 +195,37 @@ func (p *EndpointPolicy) ConsumeMapChanges() (adds, deletes MapState) {
 	p.selectorPolicy.SelectorCache.mutex.Lock()
 	defer p.selectorPolicy.SelectorCache.mutex.Unlock()
 	return p.policyMapChanges.consumeMapChanges()
+}
+
+// AllowsIdentity returns whether the specified policy allows
+// ingress and egress traffic for the specified numeric security identity.
+// If the 'secID' is zero, it will check if all traffic is allowed.
+//
+// Returning true for either return value indicates all traffic is allowed.
+func (p *EndpointPolicy) AllowsIdentity(identity identity.NumericIdentity) (ingress, egress bool) {
+	key := Key{
+		Identity: uint32(identity),
+	}
+
+	if !p.IngressPolicyEnabled {
+		ingress = true
+	} else {
+		key.TrafficDirection = trafficdirection.Ingress.Uint8()
+		if v, exists := p.PolicyMapState[key]; exists && !v.IsDeny {
+			ingress = true
+		}
+	}
+
+	if !p.EgressPolicyEnabled {
+		egress = true
+	} else {
+		key.TrafficDirection = trafficdirection.Egress.Uint8()
+		if v, exists := p.PolicyMapState[key]; exists && !v.IsDeny {
+			egress = true
+		}
+	}
+
+	return ingress, egress
 }
 
 // NewEndpointPolicy returns an empty EndpointPolicy stub.

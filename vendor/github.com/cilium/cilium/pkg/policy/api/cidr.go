@@ -16,11 +16,14 @@ package api
 
 import (
 	"net"
+	"strings"
 
 	"github.com/cilium/cilium/pkg/ip"
 	"github.com/cilium/cilium/pkg/labels"
 	cidrpkg "github.com/cilium/cilium/pkg/labels/cidr"
 )
+
+// +kubebuilder:validation:Pattern=`^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\/([0-9]|[1-2][0-9]|3[0-2])$|^s*((([0-9A-Fa-f]{1,4}:){7}(:|([0-9A-Fa-f]{1,4})))|(([0-9A-Fa-f]{1,4}:){6}:([0-9A-Fa-f]{1,4})?)|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){0,1}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){0,2}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){0,3}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){0,4}):([0-9A-Fa-f]{1,4})?))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){0,5}):([0-9A-Fa-f]{1,4})?))|(:(:|((:[0-9A-Fa-f]{1,4}){1,7}))))(%.+)?s*/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$`
 
 // CIDR specifies a block of IP addresses.
 // Example: 192.0.2.1/32
@@ -30,9 +33,9 @@ type CIDR string
 var CIDRMatchAll = []CIDR{CIDR("0.0.0.0/0"), CIDR("::/0")}
 
 // MatchesAll determines whether the CIDR matches all traffic.
-func (c *CIDR) MatchesAll() bool {
+func (c CIDR) MatchesAll() bool {
 	for _, wildcard := range CIDRMatchAll {
-		if *c == wildcard {
+		if c == wildcard {
 			return true
 		}
 	}
@@ -45,6 +48,7 @@ func (c *CIDR) MatchesAll() bool {
 type CIDRRule struct {
 	// CIDR is a CIDR prefix / IP Block.
 	//
+	// +kubebuilder:validation:Required
 	Cidr CIDR `json:"cidr"`
 
 	// ExceptCIDRs is a list of IP blocks which the endpoint subject to the rule
@@ -53,12 +57,21 @@ type CIDRRule struct {
 	// this CIDRRule, and do not apply to any other CIDR prefixes in any other
 	// CIDRRules.
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	ExceptCIDRs []CIDR `json:"except,omitempty"`
 
 	// Generated indicates whether the rule was generated based on other rules
 	// or provided by user
 	Generated bool `json:"-"`
+}
+
+// String converts the CIDRRule into a human-readable string.
+func (r CIDRRule) String() string {
+	exceptCIDRs := ""
+	if len(r.ExceptCIDRs) > 0 {
+		exceptCIDRs = "-" + CIDRSlice(r.ExceptCIDRs).String()
+	}
+	return string(r.Cidr) + exceptCIDRs
 }
 
 // CIDRSlice is a slice of CIDRs. It allows receiver methods to be defined for
@@ -98,6 +111,14 @@ func (s CIDRSlice) StringSlice() []string {
 	return result
 }
 
+// String converts the CIDRSlice into a human-readable string.
+func (s CIDRSlice) String() string {
+	if len(s) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(s.StringSlice(), ",") + "]"
+}
+
 // CIDRRuleSlice is a slice of CIDRRules. It allows receiver methods to be
 // defined for transforming the slice into other convenient forms such as
 // EndpointSelectorSlice.
@@ -108,6 +129,15 @@ type CIDRRuleSlice []CIDRRule
 func (s CIDRRuleSlice) GetAsEndpointSelectors() EndpointSelectorSlice {
 	cidrs := ComputeResultantCIDRSet(s)
 	return cidrs.GetAsEndpointSelectors()
+}
+
+// StringSlice returns the CIDRRuleSlice as a slice of strings.
+func (s CIDRRuleSlice) StringSlice() []string {
+	result := make([]string, 0, len(s))
+	for _, c := range s {
+		result = append(result, c.String())
+	}
+	return result
 }
 
 // ComputeResultantCIDRSet converts a slice of CIDRRules into a slice of

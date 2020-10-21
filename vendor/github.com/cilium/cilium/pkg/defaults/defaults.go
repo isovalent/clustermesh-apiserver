@@ -19,6 +19,9 @@ import (
 )
 
 const (
+	// AgentHealthPort is the default value for option.AgentHealthPort
+	AgentHealthPort = 9876
+
 	// IPv6ClusterAllocCIDR is the default value for option.IPv6ClusterAllocCIDR
 	IPv6ClusterAllocCIDR = IPv6ClusterAllocCIDRBase + "/64"
 
@@ -92,13 +95,8 @@ const (
 	DefaultMapPrefix = "tc/globals"
 
 	// ToFQDNsMinTTL is the default lower bound for TTLs used with ToFQDNs rules.
-	// This or ToFQDNsMinTTLPoller is used in DaemonConfig.Populate
+	// This is used in DaemonConfig.Populate
 	ToFQDNsMinTTL = 3600 // 1 hour in seconds
-
-	// ToFQDNsMinTTLPoller is the default lower bound for TTLs used with ToFQDNs
-	// rules when the poller is enabled.
-	// This or ToFQDNsMinTTL is used in DaemonConfig.Populate
-	ToFQDNsMinTTLPoller = 600 // 10 minutes in seconds
 
 	// ToFQDNsMaxIPsPerHost defines the maximum number of IPs to maintain
 	// for each FQDN name in an endpoint's FQDN cache
@@ -141,8 +139,14 @@ const (
 	// EnableIPv6 is the default value for IPv6 enablement
 	EnableIPv6 = true
 
+	// EnableIPv6NDP is the default value for IPv6 NDP support enablement
+	EnableIPv6NDP = false
+
 	// EnableL7Proxy is the default value for L7 proxy enablement
 	EnableL7Proxy = true
+
+	// EnableHostLegacyRouting is the default value for using the old routing path via stack.
+	EnableHostLegacyRouting = false
 
 	// EnableExternalIPs is the default value for k8s service with externalIPs feature.
 	EnableExternalIPs = true
@@ -179,6 +183,9 @@ const (
 	// DatapathMode is the default value for the datapath mode.
 	DatapathMode = "veth"
 
+	// EnableBPFTProxy is the default value for EnableBPFTProxy
+	EnableBPFTProxy = false
+
 	// EnableXTSocketFallback is the default value for EnableXTSocketFallback
 	EnableXTSocketFallback = true
 
@@ -194,6 +201,10 @@ const (
 	// EnableEndpointHealthChecking is the default value for
 	// EnableEndpointHealthChecking
 	EnableEndpointHealthChecking = true
+
+	// EnableHealthCheckNodePort is the default value for
+	// EnableHealthCheckNodePort
+	EnableHealthCheckNodePort = true
 
 	// AlignCheckerName is the BPF object name for the alignchecker.
 	AlignCheckerName = "bpf_alignchecker.o"
@@ -224,6 +235,10 @@ const (
 	// invoked only for endpoints which are selected by policy changes.
 	SelectiveRegeneration = true
 
+	// K8sSyncTimeout specifies the standard time to allow for synchronizing
+	// local caches with Kubernetes state before exiting.
+	K8sSyncTimeout = 3 * time.Minute
+
 	// K8sWatcherEndpointSelector specifies the k8s endpoints that Cilium
 	// should watch for.
 	K8sWatcherEndpointSelector = "metadata.name!=kube-scheduler,metadata.name!=kube-controller-manager,metadata.name!=etcd-operator,metadata.name!=gcp-controller-manager"
@@ -241,11 +256,6 @@ const (
 	// connection tracking garbage collection
 	ConntrackGCStartingInterval = 5 * time.Minute
 
-	// PolicyMapEntries is the default number of entries allowed in an
-	// endpoint's policymap, ie the maximum number of peer identities that
-	// the endpoint could send/receive traffic to/from.
-	PolicyMapEntries = 16384 // Cilium 1.5 and earlier value
-
 	// K8sEventHandover enables use of the kvstore to optimize Kubernetes
 	// event handling by listening for k8s events in the operator and
 	// mirroring it into the kvstore for reduced overhead in large
@@ -258,10 +268,6 @@ const (
 	// EndpointInterfaceNamePrefix is the default prefix name of the
 	// interface names shared by all endpoints
 	EndpointInterfaceNamePrefix = "lxc+"
-
-	// BlacklistConflictingRoutes removes all IPs from the IPAM block if a
-	// local route not owned by Cilium conflicts with it
-	BlacklistConflictingRoutes = true
 
 	// ForceLocalPolicyEvalAtSource is the default value for
 	// option.ForceLocalPolicyEvalAtSource. It is enabled by default to
@@ -361,7 +367,7 @@ const (
 
 	// IPAMExpiration is the timeout after which an IP subject to expiratio
 	// is being released again if no endpoint is being created in time.
-	IPAMExpiration = 3 * time.Minute
+	IPAMExpiration = 10 * time.Minute
 
 	// EnableIPv4FragmentsTracking enables IPv4 fragments tracking for
 	// L4-based lookups
@@ -370,4 +376,20 @@ const (
 	// FragmentsMapEntries is the default number of entries allowed in an
 	// the map used to track datagram fragments.
 	FragmentsMapEntries = 8192
+
+	// K8sEnableAPIDiscovery defines whether Kuberntes API groups and
+	// resources should be probed using the discovery API
+	K8sEnableAPIDiscovery = false
+
+	// EnableIdentityMark enables setting identity in mark field of packet
+	// for local traffic
+	EnableIdentityMark = true
+
+	// K8sEnableLeasesFallbackDiscovery enables k8s to fallback to API probing to check
+	// for the support of Leases in Kubernetes when there is an error in discovering
+	// API groups using Discovery API.
+	K8sEnableLeasesFallbackDiscovery = false
+
+	// KubeProxyReplacementHealthzBindAddr is the default kubeproxyReplacement healthz server bind addr
+	KubeProxyReplacementHealthzBindAddr = ""
 )

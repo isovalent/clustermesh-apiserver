@@ -1,4 +1,4 @@
-// Copyright 2016-2019 Authors of Cilium
+// Copyright 2016-2020 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,28 +15,13 @@
 package api
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	slim_metav1 "github.com/cilium/cilium/pkg/k8s/slim/k8s/apis/meta/v1"
 )
 
-// IngressRule contains all rule types which can be applied at ingress,
-// i.e. network traffic that originates outside of the endpoint and
-// is entering the endpoint selected by the endpointSelector.
-//
-// - All members of this structure are optional. If omitted or empty, the
-//   member will have no effect on the rule.
-//
-// - If multiple members are set, all of them need to match in order for
-//   the rule to take effect. The exception to this rule is FromRequires field;
-//   the effects of any Requires field in any rule will apply to all other
-//   rules as well.
-//
-// - For now, combining ToPorts, FromCIDR, and FromEndpoints in the same rule
-//   is not supported and any such rules will be rejected. In the future, this
-//   will be supported and if multiple members of this structure are specified,
-//   then all members must match in order for the rule to take effect. The
-//   exception to this rule is the Requires field, the effects of any Requires
-//   field in any rule will apply to all other rules as well.
-type IngressRule struct {
+// IngressCommonRule is a rule that shares some of its fields across the
+// IngressRule and IngressDenyRule. It's publicly exported so the code
+// generators can generate code for this structure.
+type IngressCommonRule struct {
 	// FromEndpoints is a list of endpoints identified by an
 	// EndpointSelector which are allowed to communicate with the endpoint
 	// subject to the rule.
@@ -45,7 +30,7 @@ type IngressRule struct {
 	// Any endpoint with the label "role=backend" can be consumed by any
 	// endpoint carrying the label "role=frontend".
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	FromEndpoints []EndpointSelector `json:"fromEndpoints,omitempty"`
 
 	// FromRequires is a list of additional constraints which must be met
@@ -57,19 +42,8 @@ type IngressRule struct {
 	// Any Endpoint with the label "team=A" requires consuming endpoint
 	// to also carry the label "team=A".
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	FromRequires []EndpointSelector `json:"fromRequires,omitempty"`
-
-	// ToPorts is a list of destination ports identified by port number and
-	// protocol which the endpoint subject to the rule is allowed to
-	// receive connections on.
-	//
-	// Example:
-	// Any endpoint with the label "app=httpd" can only accept incoming
-	// connections on port 80/tcp.
-	//
-	// +optional
-	ToPorts []PortRule `json:"toPorts,omitempty"`
 
 	// FromCIDR is a list of IP blocks which the endpoint subject to the
 	// rule is allowed to receive connections from. Only connections which
@@ -84,7 +58,7 @@ type IngressRule struct {
 	// Any endpoint with the label "app=my-legacy-pet" is allowed to receive
 	// connections from 10.3.9.1
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	FromCIDR CIDRSlice `json:"fromCIDR,omitempty"`
 
 	// FromCIDRSet is a list of IP blocks which the endpoint subject to the
@@ -99,18 +73,87 @@ type IngressRule struct {
 	// Any endpoint with the label "app=my-legacy-pet" is allowed to receive
 	// connections from 10.0.0.0/8 except from IPs in subnet 10.96.0.0/12.
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	FromCIDRSet CIDRRuleSlice `json:"fromCIDRSet,omitempty"`
 
 	// FromEntities is a list of special entities which the endpoint subject
 	// to the rule is allowed to receive connections from. Supported entities are
 	// `world`, `cluster` and `host`
 	//
-	// +optional
+	// +kubebuilder:validation:Optional
 	FromEntities EntitySlice `json:"fromEntities,omitempty"`
 
-	// TODO: Move this to the policy package (https://github.com/cilium/cilium/issues/8353)
-	aggregatedSelectors EndpointSelectorSlice
+	// TODO: Move this to the policy package
+	// (https://github.com/cilium/cilium/issues/8353)
+
+	// TODO: The following field was exported to stop govet warnings. The govet
+	// warnings were because the CRD generation tool needs every struct field
+	// that's within a CRD, to have a json tag. JSON tags cannot be applied to
+	// unexported fields, hence this change. Refactor these fields out of this
+	// struct. GH issue: https://github.com/cilium/cilium/issues/12697. Once
+	// https://go-review.googlesource.com/c/tools/+/245857 is merged, this
+	// would no longer be required.
+	AggregatedSelectors EndpointSelectorSlice `json:"-"`
+}
+
+// IngressRule contains all rule types which can be applied at ingress,
+// i.e. network traffic that originates outside of the endpoint and
+// is entering the endpoint selected by the endpointSelector.
+//
+// - All members of this structure are optional. If omitted or empty, the
+//   member will have no effect on the rule.
+//
+// - If multiple members are set, all of them need to match in order for
+//   the rule to take effect. The exception to this rule is FromRequires field;
+//   the effects of any Requires field in any rule will apply to all other
+//   rules as well.
+//
+// - FromEndpoints, FromCIDR, FromCIDRSet and FromEntities are mutually
+//   exclusive. Only one of these members may be present within an individual
+//   rule.
+type IngressRule struct {
+	IngressCommonRule `json:",inline"`
+
+	// ToPorts is a list of destination ports identified by port number and
+	// protocol which the endpoint subject to the rule is allowed to
+	// receive connections on.
+	//
+	// Example:
+	// Any endpoint with the label "app=httpd" can only accept incoming
+	// connections on port 80/tcp.
+	//
+	// +kubebuilder:validation:Optional
+	ToPorts PortRules `json:"toPorts,omitempty"`
+}
+
+// IngressDenyRule contains all rule types which can be applied at ingress,
+// i.e. network traffic that originates outside of the endpoint and
+// is entering the endpoint selected by the endpointSelector.
+//
+// - All members of this structure are optional. If omitted or empty, the
+//   member will have no effect on the rule.
+//
+// - If multiple members are set, all of them need to match in order for
+//   the rule to take effect. The exception to this rule is FromRequires field;
+//   the effects of any Requires field in any rule will apply to all other
+//   rules as well.
+//
+// - FromEndpoints, FromCIDR, FromCIDRSet and FromEntities are mutually
+//   exclusive. Only one of these members may be present within an individual
+//   rule.
+type IngressDenyRule struct {
+	IngressCommonRule `json:",inline"`
+
+	// ToPorts is a list of destination ports identified by port number and
+	// protocol which the endpoint subject to the rule is not allowed to
+	// receive connections on.
+	//
+	// Example:
+	// Any endpoint with the label "app=httpd" can not accept incoming
+	// connections on port 80/tcp.
+	//
+	// +kubebuilder:validation:Optional
+	ToPorts PortDenyRules `json:"toPorts,omitempty"`
 }
 
 // SetAggregatedSelectors creates a single slice containing all of the following
@@ -123,23 +166,23 @@ type IngressRule struct {
 //
 // FromEndpoints is not aggregated due to requirement folding in
 // GetSourceEndpointSelectorsWithRequirements()
-func (i *IngressRule) SetAggregatedSelectors() {
+func (i *IngressCommonRule) SetAggregatedSelectors() {
 	res := make(EndpointSelectorSlice, 0, len(i.FromEntities)+len(i.FromCIDR)+len(i.FromCIDRSet))
 	res = append(res, i.FromEntities.GetAsEndpointSelectors()...)
 	res = append(res, i.FromCIDR.GetAsEndpointSelectors()...)
 	res = append(res, i.FromCIDRSet.GetAsEndpointSelectors()...)
 	// Goroutines can race setting this, but they will all compute
 	// the same result, so it does not matter.
-	i.aggregatedSelectors = res
+	i.AggregatedSelectors = res
 }
 
 // GetSourceEndpointSelectorsWithRequirements returns a slice of endpoints selectors covering
 // all L3 source selectors of the ingress rule
-func (i *IngressRule) GetSourceEndpointSelectorsWithRequirements(requirements []metav1.LabelSelectorRequirement) EndpointSelectorSlice {
-	if i.aggregatedSelectors == nil {
+func (i *IngressCommonRule) GetSourceEndpointSelectorsWithRequirements(requirements []slim_metav1.LabelSelectorRequirement) EndpointSelectorSlice {
+	if i.AggregatedSelectors == nil {
 		i.SetAggregatedSelectors()
 	}
-	res := make(EndpointSelectorSlice, 0, len(i.FromEndpoints)+len(i.aggregatedSelectors))
+	res := make(EndpointSelectorSlice, 0, len(i.FromEndpoints)+len(i.AggregatedSelectors))
 	if len(requirements) > 0 && len(i.FromEndpoints) > 0 {
 		for idx := range i.FromEndpoints {
 			sel := *i.FromEndpoints[idx].DeepCopy()
@@ -147,18 +190,18 @@ func (i *IngressRule) GetSourceEndpointSelectorsWithRequirements(requirements []
 			sel.SyncRequirementsWithLabelSelector()
 			// Even though this string is deep copied, we need to override it
 			// because we are updating the contents of the MatchExpressions.
-			sel.cachedLabelSelectorString = sel.LabelSelector.String()
+			sel.CachedLabelSelectorString = sel.LabelSelector.String()
 			res = append(res, sel)
 		}
 	} else {
 		res = append(res, i.FromEndpoints...)
 	}
 
-	return append(res, i.aggregatedSelectors...)
+	return append(res, i.AggregatedSelectors...)
 }
 
 // AllowsWildcarding returns true if wildcarding should be performed upon
 // policy evaluation for the given rule.
-func (i *IngressRule) AllowsWildcarding() bool {
+func (i *IngressCommonRule) AllowsWildcarding() bool {
 	return len(i.FromRequires) == 0
 }

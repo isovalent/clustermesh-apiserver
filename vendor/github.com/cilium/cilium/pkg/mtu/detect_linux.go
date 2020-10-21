@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/cilium/cilium/pkg/logging/logfields"
+
+	"github.com/sirupsen/logrus"
 	"github.com/vishvananda/netlink"
 )
 
@@ -36,7 +39,7 @@ func getRoute(externalProbe string) ([]netlink.Route, error) {
 
 	routes, err := netlink.RouteGet(ip)
 	if err != nil {
-		return nil, fmt.Errorf("unable to lookup route to %s: %s", externalProbe, err)
+		return nil, fmt.Errorf("unable to lookup route to %s: %w", externalProbe, err)
 	}
 
 	if len(routes) == 0 {
@@ -59,9 +62,13 @@ func autoDetect() (int, error) {
 		}
 	}
 
+	if routes[0].Gw == nil {
+		return 0, fmt.Errorf("unable to find default gateway from the routes: %s", routes)
+	}
+
 	link, err := netlink.LinkByIndex(routes[0].LinkIndex)
 	if err != nil {
-		return 0, fmt.Errorf("unable to find interface of default route: %s", err)
+		return 0, fmt.Errorf("unable to find interface of default route: %w", err)
 	}
 
 	if mtu := link.Attrs().MTU; mtu != 0 {
@@ -70,4 +77,45 @@ func autoDetect() (int, error) {
 	}
 
 	return EthernetMTU, nil
+}
+
+// getMTUFromIf finds the interface that holds the ip and returns its mtu
+func getMTUFromIf(ip net.IP) (int, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return 0, fmt.Errorf("unable to list interfaces: %w", err)
+	}
+
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			log.WithFields(logrus.Fields{
+				logfields.Device: iface.Name,
+			}).Warning("Unable to list all addresses")
+			continue
+		}
+
+		for _, addr := range addrs {
+			myIP, _, err := net.ParseCIDR(addr.String())
+
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					logfields.Device: iface.Name,
+					logfields.IPAddr: addr,
+				}).Warning("Unable parse the address")
+				continue
+			}
+
+			if myIP.Equal(ip) == true {
+				myMTU := iface.MTU
+				log.WithFields(logrus.Fields{
+					logfields.Device: iface.Name,
+					logfields.IPAddr: ip,
+					logfields.MTU:    myMTU,
+				}).Info("Inheriting MTU from external network interface")
+				return myMTU, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("No interface contains the provided ip: %v", ip)
 }
