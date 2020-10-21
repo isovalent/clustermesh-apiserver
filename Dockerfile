@@ -10,6 +10,7 @@ RUN apk --update add ca-certificates
 
 FROM scratch
 LABEL maintainer="maintainer@cilium.io"
+COPY --from=builder /go/src/github.com/cilium/clustermesh-apiserver/etcd-config.yaml /var/lib/cilium/etcd-config.yaml
 COPY --from=builder /go/src/github.com/cilium/clustermesh-apiserver/clustermesh-apiserver /usr/bin/clustermesh-apiserver
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 WORKDIR /

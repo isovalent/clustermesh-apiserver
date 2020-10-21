@@ -29,9 +29,40 @@ spec:
         name: "clustermesh-apiserver"
     spec:
       serviceAccount: clustermesh-apiserver
+      initContainers:
+      - name: "etcd-init"
+        image: "quay.io/coreos/etcd:v3.4.13"
+        env:
+        - name: ETCDCTL_API
+          value: "3"
+        - name: HOSTNAME_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        command: ["/bin/sh", "-c"]
+        args:
+        - >
+          rm -rf /var/run/etcd/*;
+          export ETCDCTL_API=3;
+          /usr/local/bin/etcd --data-dir=/var/run/etcd --name=clustermesh-apiserver --listen-client-urls=http://127.0.0.1:2379 --advertise-client-urls=http://127.0.0.1:2379 --initial-cluster-token=clustermesh-apiserver --initial-cluster-state=new --auto-compaction-retention=1 &
+          export rootpw=`head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16`;
+          echo $rootpw | etcdctl --interactive=false user add root;
+          export vmpw=`head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16`;
+          echo $vmpw | etcdctl --interactive=false user add externalworkload;
+          etcdctl role add externalworkload;
+          etcdctl role grant-permission externalworkload --from-key read '';
+          etcdctl role grant-permission externalworkload readwrite --prefix cilium/state/noderegister/v1/;
+          etcdctl role grant-permission externalworkload readwrite --prefix cilium/.initlock/;
+          etcdctl user grant-role externalworkload externalworkload;
+          etcdctl user grant-role root root;
+          etcdctl auth enable;
+          exit
+        volumeMounts:
+        - mountPath: /var/run/etcd
+          name: etcd-data-dir
       containers:
       - name: "etcd"
-        image: "quay.io/coreos/etcd:v3.4.7"
+        image: "quay.io/coreos/etcd:v3.4.13"
         env:
         - name: ETCDCTL_API
           value: "3"
@@ -42,18 +73,33 @@ spec:
         command:
           - "/usr/local/bin/etcd"
         args:
+          - --data-dir=/var/run/etcd
           - --name=clustermesh-apiserver
-          - --listen-client-urls=http://0.0.0.0:2379
-          - --advertise-client-urls=http://$(HOSTNAME_IP):2379
+          - --client-cert-auth
+          - --trusted-ca-file=/var/lib/etcd-secrets/ca.crt
+          - --cert-file=/var/lib/etcd-secrets/tls.crt
+          - --key-file=/var/lib/etcd-secrets/tls.key
+          - --listen-client-urls=https://127.0.0.1:2379,https://$(HOSTNAME_IP):2379
+          - --advertise-client-urls=https://$(HOSTNAME_IP):2379
           - --initial-cluster-token=clustermesh-apiserver
-          - --initial-cluster-state=new
           - --auto-compaction-retention=1
+        volumeMounts:
+        - mountPath: /var/lib/etcd-secrets
+          name: etcd-server-secrets
+          readOnly: true
+        - mountPath: /var/run/etcd
+          name: etcd-data-dir
+        - mountPath: /var/lib/cilium/etcd-secrets
+          name: etcd-admin-client
+          readOnly: true
       - name: "apiserver"
         image: "cilium/clustermesh-apiserver:testing"
         command:
           - "/usr/bin/clustermesh-apiserver"
         args:
           - --cluster-name=$(CLUSTER_NAME)
+          - --kvstore-opt
+          - etcd.config=/var/lib/cilium/etcd-config.yaml
         env:
         - name: CLUSTER_NAME
           valueFrom:
@@ -72,3 +118,20 @@ spec:
               key: identity-allocation-mode
               name: cilium-config
               optional: true
+        volumeMounts:
+        - mountPath: /var/lib/cilium/etcd-secrets
+          name: etcd-admin-client
+          readOnly: true
+      volumes:
+      - name: etcd-server-secrets
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: externalworkload-server-certs
+      - name: etcd-admin-client
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: externalworkload-admin-certs
+      - name: etcd-data-dir
+        emptyDir: {}

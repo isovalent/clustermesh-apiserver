@@ -190,6 +190,10 @@ func runApiserver() error {
 	flags.Duration(option.KVstorePeriodicSync, defaults.KVstorePeriodicSync, "Periodic KVstore synchronization interval")
 	option.BindEnv(option.KVstorePeriodicSync)
 
+	flags.Var(option.NewNamedMapOptions(option.KVStoreOpt, &option.Config.KVStoreOpt, nil),
+		option.KVStoreOpt, "Key-value store options")
+	option.BindEnv(option.KVStoreOpt)
+
 	viper.BindPFlags(flags)
 	option.Config.Populate()
 
@@ -546,8 +550,7 @@ func runServer(cmd *cobra.Command) {
 
 	go startApi()
 
-	opts := map[string]string{"etcd.address": "127.0.0.1:2379"}
-	if err := kvstore.Setup(context.Background(), "etcd", opts, nil); err != nil {
+	if err := kvstore.Setup(context.Background(), "etcd", option.Config.KVStoreOpt, nil); err != nil {
 		log.WithError(err).Fatal("Unable to connect to etcd")
 	}
 
